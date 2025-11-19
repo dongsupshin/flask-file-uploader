@@ -82,6 +82,88 @@ $(function () {
         )
     );
 
+    // 고정 확장자 체크/언체크 시 서버에 저장
+    $(document).on('change', '.ext-fixed', function () {
+        var ext = $(this).val();
+        var checked = $(this).is(':checked');
+
+        $.ajax({
+            url: '/api/block/fixed',
+            method: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({ ext: ext, checked: checked })
+        });
+    });
+
+    $('#custom-ext-add').on('click', function () {
+        var ext = $('#custom-ext-input').val().trim().toLowerCase();
+        if (!ext) {
+            alert('확장자를 입력하세요.');
+            return;
+        }
+        if (ext.charAt(0) === '.') {
+            ext = ext.substring(1);
+        }
+        if (ext.length > 20) {
+            alert('확장자는 20자 이하여야 합니다.');
+            return;
+        }
+
+        // 중복 체크 (클라이언트)
+        var duplicate = false;
+        $('#custom-ext-list .ext-custom').each(function () {
+            if ($(this).data('ext') === ext) {
+                duplicate = true;
+                return false;
+            }
+        });
+        if (duplicate) {
+            alert('이미 등록된 확장자입니다.');
+            return;
+        }
+
+        $.ajax({
+            url: '/api/block/custom',
+            method: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({ ext: ext }),
+            success: function (res) {
+                try { res = typeof res === 'string' ? JSON.parse(res) : res; } catch (e) {}
+                if (!res.success) {
+                    if (res.error === 'MAX_200') {
+                        alert('커스텀 확장자는 최대 200개까지 등록 가능합니다.');
+                    } else if (res.error === 'DUPLICATE') {
+                        alert('이미 등록된 확장자입니다.');
+                    } else {
+                        alert('등록에 실패했습니다.');
+                    }
+                    return;
+                }
+
+                var tag = $('<span class="ext-custom label label-default" style="margin-right:5px; cursor:pointer;"></span>');
+                tag.attr('data-ext', ext);
+                tag.text(ext + ' ×');
+                $('#custom-ext-list').append(tag);
+                $('#custom-ext-input').val('');
+            }
+        });
+    });
+
+
+    $(document).on('click', '.ext-custom', function () {
+        var $tag = $(this);
+        var ext = $tag.data('ext');
+
+        $.ajax({
+            url: '/api/block/custom/' + encodeURIComponent(ext),
+            method: 'DELETE',
+            success: function (res) {
+                $tag.remove();
+            }
+        });
+    });
+
+
     if (window.location.hostname === 'blueimp.github.io') {
         // Demo settings:
         $('#fileupload').fileupload('option', {

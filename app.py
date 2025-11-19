@@ -17,8 +17,41 @@ from werkzeug.utils import secure_filename
 
 from lib.upload_file import uploadfile
 
+import json
 
 app = Flask(__name__)
+
+BLOCK_CONFIG_PATH = 'block_config.json'
+
+DEFAULT_FIXED_EXTS = ["bat", "cmd", "com", "cpl", "exe", "scr", "js"]
+
+def load_block_config():
+    # 기본값 구조
+    cfg = {
+        "fixed": {ext: False for ext in DEFAULT_FIXED_EXTS},
+        "custom": []
+    }
+    if not os.path.exists(BLOCK_CONFIG_PATH):
+        return cfg
+
+    with open(BLOCK_CONFIG_PATH, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+
+    # fixed
+    if "fixed" in data:
+        cfg["fixed"].update(data["fixed"])
+    # custom
+    if "custom" in data:
+        cfg["custom"] = data["custom"]
+
+    return cfg
+
+
+def save_block_config(cfg):
+    with open(BLOCK_CONFIG_PATH, 'w', encoding='utf-8') as f:
+        json.dump(cfg, f, ensure_ascii=False, indent=2)
+
+
 app.config['SECRET_KEY'] = 'hard to guess string'
 app.config['UPLOAD_FOLDER'] = 'data/'
 app.config['THUMBNAIL_FOLDER'] = 'data/thumbnail/'
@@ -31,8 +64,24 @@ bootstrap = Bootstrap(app)
 
 
 def allowed_file(filename):
-    return '.' in filename and \
-        filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+    if '.' not in filename:
+        return False
+
+    ext = filename.rsplit('.', 1)[1].lower()
+
+    if ext not in ALLOWED_EXTENSIONS:
+        return False
+
+    # 차단 확장자도 서버에서 한 번 더 체크
+    cfg = load_block_config()
+    blocked_fixed = {e for e, v in cfg["fixed"].items() if v}
+    blocked_custom = set(cfg["custom"])
+    blocked = blocked_fixed | blocked_custom
+
+    if ext in blocked:
+        return False
+
+    return True
 
 
 def gen_file_name(filename):
@@ -139,10 +188,67 @@ def get_file(filename):
     return send_from_directory(os.path.join(app.config['UPLOAD_FOLDER']), filename=filename)
 
 
-@app.route('/', methods=['GET', 'POST'])
+@app.route('/', methods=['GET'])
 def index():
-    return render_template('index.html')
+    cfg = load_block_config()
+    return render_template(
+        'index.html',
+        fixed_blocked=cfg["fixed"],     # {"bat": True, "cmd": False, ...}
+        custom_blocked=cfg["custom"]    # ["sh", "php", ...]
+    )
 
+@app.route('/api/block/fixed', methods=['POST'])
+def api_block_fixed():
+    data = request.get_json() or {}
+    ext = (data.get('ext') or '').lower()
+    checked = bool(data.get('checked'))
+
+    cfg = load_block_config()
+    if ext not in cfg["fixed"]:
+        return simplejson.dumps({"success": False, "error": "UNKNOWN_FIXED_EXT"})
+
+    cfg["fixed"][ext] = checked
+    save_block_config(cfg)
+
+    return simplejson.dumps({"success": True})
+
+@app.route('/api/block/custom', methods=['POST'])
+def api_add_custom():
+    data = request.get_json() or {}
+    ext = (data.get('ext') or '').strip().lower()
+
+    if ext.startswith('.'):
+        ext = ext[1:]
+
+    # 2-1. 최대 20자리
+    if not ext or len(ext) > 20:
+        return simplejson.dumps({"success": False, "error": "INVALID_LENGTH"})
+
+    cfg = load_block_config()
+
+    # 3-1. 최대 200개까지
+    if len(cfg["custom"]) >= 200:
+        return simplejson.dumps({"success": False, "error": "MAX_200"})
+
+    # 중복 체크
+    if ext in cfg["custom"]:
+        return simplejson.dumps({"success": False, "error": "DUPLICATE"})
+
+    cfg["custom"].append(ext)
+    save_block_config(cfg)
+
+    return simplejson.dumps({"success": True, "ext": ext})
+
+@app.route('/api/block/custom/<string:ext>', methods=['DELETE'])
+def api_delete_custom(ext):
+    ext = ext.strip().lower()
+    cfg = load_block_config()
+
+    if ext in cfg["custom"]:
+        cfg["custom"].remove(ext)
+        save_block_config(cfg)
+
+    return simplejson.dumps({"success": True})
 
 if __name__ == '__main__':
     app.run(debug=True)
