@@ -52,9 +52,11 @@ def save_block_config(cfg):
         json.dump(cfg, f, ensure_ascii=False, indent=2)
 
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
 app.config['SECRET_KEY'] = 'hard to guess string'
-app.config['UPLOAD_FOLDER'] = 'data/'
-app.config['THUMBNAIL_FOLDER'] = 'data/thumbnail/'
+app.config['UPLOAD_FOLDER'] = os.path.join(BASE_DIR, 'data')
+app.config['THUMBNAIL_FOLDER'] = os.path.join(BASE_DIR, 'data', 'thumbnail')
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
 
 ALLOWED_EXTENSIONS = set(['csv', 'txt', 'gif', 'png', 'jpg', 'jpeg', 'bmp', 'rar', 'zip', '7zip', 'doc', 'docx', 'xlsx', 'ppt', 'pptx', 'pdf', 'mp3', 'mp4', 'avi'])
